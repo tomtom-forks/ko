@@ -1,20 +1,18 @@
 # GitHub Action
 
-This repository provides a composite GitHub Action that runs `ko build` using the [`ko` container image](https://github.com/ko-build/ko/pkgs/container/ko) published with every release, so no installation step is needed. It requires a Linux runner with Docker.
+This repository provides a [Docker container action](https://docs.github.com/en/actions/tutorials/use-containerized-services/create-a-docker-container-action) that runs `ko build` inside the [`ko` container image](https://github.com/ko-build/ko/pkgs/container/ko) published with every release, so no installation step is needed. It requires a Linux runner.
 
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: docker/login-action@v3
-    with:
-      registry: ghcr.io
-      username: ${{ github.actor }}
-      password: ${{ github.token }}
   - uses: ko-build/ko@v0.19.0
     id: ko
     with:
       importpaths: ./cmd/app
       docker-repo: ghcr.io/${{ github.repository }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      password: ${{ github.token }}
       tags: |
         latest
         ${{ github.sha }}
@@ -24,9 +22,9 @@ steps:
       JSON: ${{ steps.ko.outputs.json }}
 ```
 
-The image version follows the ref the action is used at: `@v0.19.0` runs `ghcr.io/ko-build/ko:v0.19.0`, any other ref (a branch or a SHA) runs `:latest`. Set `image` to choose another one.
+The action builds `FROM` the `latest` image, which the `image` workflow publishes from `main`. Files it writes, such as `refs` and `sbom-dir`, are owned by root.
 
-The container reads registry credentials from the runner's Docker config, so log in with `docker/login-action` first. It runs as the runner's user in the workspace, so paths such as `refs` and `sbom-dir` are written where later steps can read them.
+The container does not see the runner's Docker config, so a login done by `docker/login-action` does not reach it. Pass `registry`, `username` and `password` instead.
 
 ## Inputs
 
@@ -51,7 +49,7 @@ The container reads registry credentials from the runner's Docker config, so log
 | `default-base-image` | `KO_DEFAULTBASEIMAGE` | |
 | `default-platforms` | `KO_DEFAULTPLATFORMS` | |
 | `data-date-epoch` | `KO_DATA_DATE_EPOCH` | |
-| `image` | | the `ko` image matching the action's ref |
+| `registry`, `username`, `password` | `ko login` | |
 
 `tags`, `labels`, `annotations` and `platform` accept values separated by commas or newlines. The `KO_*` inputs fall back to the environment variables of the same name. `--local` is not supported, since the container has no access to the Docker daemon.
 
