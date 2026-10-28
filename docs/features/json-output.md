@@ -61,7 +61,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-      - uses: ko-build/setup-ko@v0.9
+      # setup-ko installs upstream ko releases, which do not have -O github yet.
+      - name: Install ko
+        run: |
+          gh release download --repo tomtom-forks/ko --pattern 'ko_Linux_x86_64.tar.gz' --output - | sudo tar -xz -C /usr/local/bin ko
+        env:
+          GH_TOKEN: ${{ github.token }}
       - id: ko
         run: ko build -O github -t latest ./cmd/app
         env:
