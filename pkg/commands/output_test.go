@@ -17,8 +17,11 @@ package commands
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -332,5 +335,73 @@ func TestSBOMFormat(t *testing.T) {
 		if got := sbomFormat(mt); got != want {
 			t.Errorf("sbomFormat(%q) = %q, want %q", mt, got, want)
 		}
+	}
+}
+
+// parseGitHubOutput reads the name<<delimiter entries of a GitHub Actions
+// output file.
+func parseGitHubOutput(t *testing.T, content string) map[string]string {
+	t.Helper()
+	got := map[string]string{}
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	for i := 0; i < len(lines); i++ {
+		name, delimiter, ok := strings.Cut(lines[i], "<<")
+		if !ok {
+			t.Fatalf("line %q is not a name<<delimiter entry", lines[i])
+		}
+		var value []string
+		for i++; i < len(lines) && lines[i] != delimiter; i++ {
+			value = append(value, lines[i])
+		}
+		if i == len(lines) {
+			t.Fatalf("output %s has no closing delimiter", name)
+		}
+		got[name] = strings.Join(value, "\n")
+	}
+	return got
+}
+
+func TestWriteGitHubOutput(t *testing.T) {
+	out := buildOutput{
+		Version: "v1", Tags: []string{"example.com/a:latest", "example.com/a:v1"},
+		Labels: map[string]string{"k": "v"}, Annotations: []string{},
+		Images: []imageOutput{{ImportPath: "example.com/a", Ref: "example.com/a@" + digestA, Digest: digestA, Platforms: []string{"linux/amd64"}}},
+	}
+	path := filepath.Join(t.TempDir(), "output")
+	if err := os.WriteFile(path, []byte("existing=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeGitHubOutput(path, out); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(content), "existing=1\n") {
+		t.Errorf("existing content was not kept: %q", content)
+	}
+	got := parseGitHubOutput(t, strings.TrimPrefix(string(content), "existing=1\n"))
+
+	want := map[string]string{
+		"version":     "v1",
+		"tags":        `["example.com/a:latest","example.com/a:v1"]`,
+		"labels":      `{"k":"v"}`,
+		"annotations": `[]`,
+		"images":      `[{"importpath":"example.com/a","ref":"example.com/a@` + digestA + `","digest":"` + digestA + `","platforms":["linux/amd64"],"sbom":null}]`,
+	}
+	whole, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want["json"] = string(whole)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("writeGitHubOutput() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestWriteGitHubOutputUnwritable(t *testing.T) {
+	if err := writeGitHubOutput(filepath.Join(t.TempDir(), "missing", "output"), buildOutput{}); err == nil {
+		t.Error("writeGitHubOutput() = nil, want an error")
 	}
 }

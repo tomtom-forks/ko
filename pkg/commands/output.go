@@ -15,7 +15,10 @@
 package commands
 
 import (
+	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -264,4 +267,71 @@ func writeBuildOutput(w io.Writer, images map[string]name.Reference) error {
 		}
 	}
 	return nil
+}
+
+// writeGitHubOutput appends the build result to the GitHub Actions output file
+// at path: one output per key of the JSON document, and json for all of it.
+// Every value is compact JSON, except the version which is a plain string.
+func writeGitHubOutput(path string, out buildOutput) error {
+	whole, err := json.Marshal(out)
+	if err != nil {
+		return fmt.Errorf("encoding json output: %w", err)
+	}
+	outputs := []struct {
+		name  string
+		value any
+	}{
+		{"version", out.Version},
+		{"tags", out.Tags},
+		{"labels", out.Labels},
+		{"annotations", out.Annotations},
+		{"images", out.Images},
+		{"json", json.RawMessage(whole)},
+	}
+
+	var buf bytes.Buffer
+	for _, o := range outputs {
+		value, ok := o.value.(string)
+		if !ok {
+			b, err := json.Marshal(o.value)
+			if err != nil {
+				return fmt.Errorf("encoding %s output: %w", o.name, err)
+			}
+			value = string(b)
+		}
+		delimiter, err := githubOutputDelimiter(value)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&buf, "%s<<%s\n%s\n%s\n", o.name, delimiter, value, delimiter)
+	}
+
+	//nolint:gosec // The path is the GITHUB_OUTPUT file, which is meant to be written.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("opening GITHUB_OUTPUT: %w", err)
+	}
+	if _, err := f.Write(buf.Bytes()); err != nil {
+		f.Close()
+		return fmt.Errorf("writing GITHUB_OUTPUT: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing GITHUB_OUTPUT: %w", err)
+	}
+	return nil
+}
+
+// githubOutputDelimiter returns a random delimiter that value does not
+// contain, so that it cannot end its own output early.
+func githubOutputDelimiter(value string) (string, error) {
+	for {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			return "", fmt.Errorf("generating output delimiter: %w", err)
+		}
+		delimiter := "ko_" + hex.EncodeToString(b)
+		if !strings.Contains(value, delimiter) {
+			return delimiter, nil
+		}
+	}
 }
