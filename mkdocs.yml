@@ -44,6 +44,7 @@ nav:
     - features/static-assets.md
     - features/build-cache.md
     - features/debugging.md
+    - features/github-action.md
   - Advanced:
     - advanced/go-packages.md
     - advanced/limitations.md
