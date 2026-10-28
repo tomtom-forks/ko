@@ -1,0 +1,49 @@
+name: Test action
+
+on:
+  pull_request:
+    branches:
+      - 'main'
+    paths:
+      - 'action.yml'
+      - '.github/workflows/test-action.yaml'
+
+permissions: {}
+
+jobs:
+  action:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Runs the image published from main by the image workflow.
+      - uses: ./
+        id: ko
+        with:
+          importpaths: ./test
+          docker-repo: ko.local
+          push: false
+          sbom: none
+          tags: |
+            test
+            ${{ github.sha }}
+          labels: org.opencontainers.image.title=test
+
+      - name: Check outputs
+        env:
+          JSON: ${{ steps.ko.outputs.json }}
+          TAGS: ${{ steps.ko.outputs.tags }}
+          DIGEST: ${{ steps.ko.outputs.digest }}
+        run: |
+          set -o errexit
+          set -o nounset
+          jq -e '.images | length == 1' <<<"${JSON}"
+          jq -e 'length == 2' <<<"${TAGS}"
+          jq -e --arg sha "${GITHUB_SHA}" 'map(endswith(":test") or endswith(":" + $sha)) | all' <<<"${TAGS}"
+          [[ "${DIGEST}" == sha256:* ]]
