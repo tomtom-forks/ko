@@ -1,0 +1,222 @@
+name: ko
+description: Build and publish container images from Go code with ko, running the published ko image.
+author: ko Build Authors
+branding:
+  icon: package
+  color: blue
+
+inputs:
+  importpaths:
+    description: Go import paths (or relative directories) to build, one per line or space separated.
+    default: .
+  working-directory:
+    description: Directory, relative to the workspace, ko runs in.
+    default: .
+  annotations:
+    description: Which annotations (key=value[,key=value]) to add to the OCI manifest.
+    default: ""
+  labels:
+    description: Which labels (key=value[,key=value]) to add to the image.
+    default: ""
+  refs:
+    description: Path to file where a list of the published image references will be written.
+    default: ""
+  user:
+    description: The default user the image should be run as.
+    default: ""
+  output:
+    description: "Format of the results written to stdout: 'text' or 'json' (same shape as docker/metadata-action's json output, plus ko extras)."
+    default: json
+  sbom:
+    description: The SBOM media type to use (none will disable SBOM synthesis and upload).
+    default: spdx
+  tags:
+    description: Which tags to use for the produced image instead of the default 'latest' tag, comma or newline separated (may not work properly with bare or base-import-paths).
+    default: latest
+  ldflags:
+    description: ldflags to pass to go build, one set per line.
+    default: ""
+  platform:
+    description: "Which platform to use when pulling a multi-platform base. Format: all | <os>[/<arch>[/<variant>]][,platform]*"
+    default: ""
+  push:
+    description: Push images to the registry (true/false).
+    default: "true"
+  bare:
+    description: Whether to just use KO_DOCKER_REPO without additional context (true/false).
+    default: "false"
+  base-import-paths:
+    description: Whether to use the base path without MD5 hash after KO_DOCKER_REPO (true/false).
+    default: "false"
+  preserve-import-paths:
+    description: Whether to preserve the full import path after KO_DOCKER_REPO (true/false).
+    default: "false"
+  tag-only:
+    description: Include tags but not digests in resolved image references (true/false).
+    default: "false"
+  insecure-registry:
+    description: Whether to skip TLS verification on the registry (true/false).
+    default: "false"
+  disable-optimizations:
+    description: Disable optimizations when building Go code (true/false).
+    default: "false"
+  sbom-dir:
+    description: Path to directory where the SBOM will be written.
+    default: ""
+  oci-layout-path:
+    description: Path to save the OCI image layout of the built images.
+    default: ""
+  tarball:
+    description: File to save images tarballs.
+    default: ""
+  jobs:
+    description: The maximum number of concurrent builds.
+    default: ""
+  docker-repo:
+    description: Registry to publish to (KO_DOCKER_REPO). Falls back to the KO_DOCKER_REPO environment variable.
+    default: ""
+  config-path:
+    description: Directory holding .ko.yaml (KO_CONFIG_PATH). Falls back to the KO_CONFIG_PATH environment variable.
+    default: ""
+  default-base-image:
+    description: Default base image (KO_DEFAULTBASEIMAGE). Falls back to the KO_DEFAULTBASEIMAGE environment variable.
+    default: ""
+  default-platforms:
+    description: Default platforms (KO_DEFAULTPLATFORMS). Falls back to the KO_DEFAULTPLATFORMS environment variable.
+    default: ""
+  data-date-epoch:
+    description: Timestamp of files under kodata (KO_DATA_DATE_EPOCH). Falls back to the KO_DATA_DATE_EPOCH environment variable.
+    default: ""
+  image:
+    description: The ko image to run. Defaults to ghcr.io/<this action's repository>:<this action's tag>, or latest when not run from a tag.
+    default: ""
+
+outputs:
+  json:
+    description: The whole JSON document ko wrote to stdout. Empty unless output is json.
+    value: ${{ steps.run.outputs.json }}
+  tags:
+    description: The "tags" of the JSON document, as a JSON array of repo:tag strings.
+    value: ${{ steps.run.outputs.tags }}
+  digest:
+    description: The digest of the first image of the JSON document.
+    value: ${{ steps.run.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        ACTION_REPOSITORY: ${{ github.action_repository || github.repository }}
+        ACTION_REF: ${{ github.action_ref }}
+        IN_IMPORTPATHS: ${{ inputs.importpaths }}
+        IN_WORKDIR: ${{ inputs.working-directory }}
+        IN_ANNOTATIONS: ${{ inputs.annotations }}
+        IN_LABELS: ${{ inputs.labels }}
+        IN_REFS: ${{ inputs.refs }}
+        IN_USER: ${{ inputs.user }}
+        IN_OUTPUT: ${{ inputs.output }}
+        IN_SBOM: ${{ inputs.sbom }}
+        IN_TAGS: ${{ inputs.tags }}
+        IN_LDFLAGS: ${{ inputs.ldflags }}
+        IN_PLATFORM: ${{ inputs.platform }}
+        IN_PUSH: ${{ inputs.push }}
+        IN_BARE: ${{ inputs.bare }}
+        IN_BASE_IMPORT_PATHS: ${{ inputs.base-import-paths }}
+        IN_PRESERVE_IMPORT_PATHS: ${{ inputs.preserve-import-paths }}
+        IN_TAG_ONLY: ${{ inputs.tag-only }}
+        IN_INSECURE_REGISTRY: ${{ inputs.insecure-registry }}
+        IN_DISABLE_OPTIMIZATIONS: ${{ inputs.disable-optimizations }}
+        IN_SBOM_DIR: ${{ inputs.sbom-dir }}
+        IN_OCI_LAYOUT_PATH: ${{ inputs.oci-layout-path }}
+        IN_TARBALL: ${{ inputs.tarball }}
+        IN_JOBS: ${{ inputs.jobs }}
+        IN_DOCKER_REPO: ${{ inputs.docker-repo }}
+        IN_CONFIG_PATH: ${{ inputs.config-path }}
+        IN_DEFAULT_BASE_IMAGE: ${{ inputs.default-base-image }}
+        IN_DEFAULT_PLATFORMS: ${{ inputs.default-platforms }}
+        IN_DATA_DATE_EPOCH: ${{ inputs.data-date-epoch }}
+        IN_IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+
+        image="${IN_IMAGE}"
+        if [[ -z "${image}" ]]; then
+          tag=latest
+          if [[ "${ACTION_REF}" =~ ^v[0-9] ]]; then
+            tag="${ACTION_REF}"
+          fi
+          image="ghcr.io/${ACTION_REPOSITORY,,}:${tag}"
+        fi
+
+        output="${IN_OUTPUT,,}"
+        args=(build --output "${output}" --push="${IN_PUSH,,}" --sbom "${IN_SBOM}")
+
+        # join collapses newlines into commas, the separator ko's slice flags accept.
+        join() { tr '\n' ',' <<<"$1" | sed -e 's/,\{2,\}/,/g' -e 's/^,//' -e 's/,$//'; }
+
+        flag() { [[ -z "$2" ]] || args+=("$1" "$2"); }
+        toggle() { [[ "${2,,}" != "true" ]] || args+=("$1"); }
+
+        flag --tags "$(join "${IN_TAGS}")"
+        flag --image-annotation "$(join "${IN_ANNOTATIONS}")"
+        flag --image-label "$(join "${IN_LABELS}")"
+        flag --image-refs "${IN_REFS}"
+        flag --image-user "${IN_USER}"
+        flag --platform "$(join "${IN_PLATFORM}")"
+        flag --sbom-dir "${IN_SBOM_DIR}"
+        flag --oci-layout-path "${IN_OCI_LAYOUT_PATH}"
+        flag --tarball "${IN_TARBALL}"
+        flag --jobs "${IN_JOBS}"
+        toggle --bare "${IN_BARE}"
+        toggle --base-import-paths "${IN_BASE_IMPORT_PATHS}"
+        toggle --preserve-import-paths "${IN_PRESERVE_IMPORT_PATHS}"
+        toggle --tag-only "${IN_TAG_ONLY}"
+        toggle --insecure-registry "${IN_INSECURE_REGISTRY}"
+        toggle --disable-optimizations "${IN_DISABLE_OPTIMIZATIONS}"
+
+        while IFS= read -r line; do
+          [[ -z "${line// /}" ]] || args+=(--ldflags "${line}")
+        done <<<"${IN_LDFLAGS}"
+
+        # Import paths are separated by whitespace.
+        read -r -a importpaths <<<"$(tr '\n' ' ' <<<"${IN_IMPORTPATHS:-.}")"
+        args+=("${importpaths[@]}")
+
+        # Inputs win over the environment, which is passed through when set.
+        [[ -z "${IN_DOCKER_REPO}" ]] || export KO_DOCKER_REPO="${IN_DOCKER_REPO}"
+        [[ -z "${IN_CONFIG_PATH}" ]] || export KO_CONFIG_PATH="${IN_CONFIG_PATH}"
+        [[ -z "${IN_DEFAULT_BASE_IMAGE}" ]] || export KO_DEFAULTBASEIMAGE="${IN_DEFAULT_BASE_IMAGE}"
+        [[ -z "${IN_DEFAULT_PLATFORMS}" ]] || export KO_DEFAULTPLATFORMS="${IN_DEFAULT_PLATFORMS}"
+        [[ -z "${IN_DATA_DATE_EPOCH}" ]] || export KO_DATA_DATE_EPOCH="${IN_DATA_DATE_EPOCH}"
+
+        docker_args=(run --rm
+          --user "$(id -u):$(id -g)"
+          -e HOME=/tmp/home
+          -e DOCKER_CONFIG=/tmp/home/.docker
+          -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}"
+          -w "${GITHUB_WORKSPACE}/${IN_WORKDIR}")
+        for var in KO_DOCKER_REPO KO_CONFIG_PATH KO_DEFAULTBASEIMAGE KO_DEFAULTPLATFORMS KO_DATA_DATE_EPOCH; do
+          [[ -z "${!var:-}" ]] || docker_args+=(-e "${var}")
+        done
+        # Registry credentials, e.g. from docker/login-action.
+        docker_config="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
+        if [[ -f "${docker_config}" ]]; then
+          docker_args+=(-v "${docker_config}:/tmp/home/.docker/config.json:ro")
+        fi
+
+        stdout="$(mktemp)"
+        docker "${docker_args[@]}" "${image}" "${args[@]}" >"${stdout}"
+        cat "${stdout}"
+
+        delimiter="ko_$(openssl rand -hex 8)"
+        if [[ "${output}" == "json" ]]; then
+          {
+            echo "json<<${delimiter}"
+            cat "${stdout}"
+            echo "${delimiter}"
+            echo "tags=$(jq -c '.tags' "${stdout}")"
+            echo "digest=$(jq -r '.images[0].digest // empty' "${stdout}")"
+          } >>"${GITHUB_OUTPUT}"
+        fi
