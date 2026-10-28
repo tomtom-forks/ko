@@ -48,4 +48,34 @@ The `tags`, `labels` and `annotations` keys have the same shape as the [`json` o
   - `path` is the SBOM file written by `--sbom-dir`, only present when that file holds this very document: import paths sharing a base name overwrite each other's file.
   - It is `null` when the image has no SBOM, e.g. with `--sbom=none`: iterate with `jq '.images[].sbom.platforms[]?'`.
 
+## GitHub Actions
+
+Inside a GitHub Actions workflow (`GITHUB_ACTIONS=true`), `-O github` prints the image references like `-O text`, and also writes the result to the file named by `GITHUB_OUTPUT`, so later steps and jobs can use it as [step outputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idoutputs). There is one output per key of the JSON document above (`version`, `tags`, `labels`, `annotations` and `images`), and `json` holds the whole document. All are compact JSON, except `version`, which is a plain string. Using `-O github` anywhere else is an error.
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.ko.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+      # setup-ko installs upstream ko releases, which do not have -O github yet.
+      - name: Install ko
+        run: |
+          gh release download --repo tomtom-forks/ko --pattern 'ko_Linux_x86_64.tar.gz' --output - | sudo tar -xz -C /usr/local/bin ko
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - id: ko
+        run: ko build -O github -t latest ./cmd/app
+        env:
+          KO_DOCKER_REPO: ghcr.io/${{ github.repository }}
+      - run: echo "${DIGEST}"
+        env:
+          DIGEST: ${{ fromJSON(steps.ko.outputs.images)[0].digest }}
+```
+
+GitHub drops step outputs above 1 MB, which a large `images` (with SBOMs) or `json` can reach.
+
 `-O text` is the default and keeps the existing output. `--output` is only available on `ko build` (and its alias `ko publish`).

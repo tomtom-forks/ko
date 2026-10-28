@@ -60,7 +60,7 @@ ko build IMPORTPATH... [flags]
       --ldflags strings            ldflags to pass to go build (may be repeated)
   -L, --local                      Load into images to local docker daemon.
       --oci-layout-path string     Path to save the OCI image layout of the built images
-  -O, --output string              Format of the results written to stdout: 'text' or 'json' (same shape as docker/metadata-action's json output, plus ko extras). (default "text")
+  -O, --output string              Format of the results written to stdout: 'text', 'json' (same shape as docker/metadata-action's json output, plus ko extras) or 'github' (text, and the json as step outputs; only in GitHub Actions). (default "text")
       --platform strings           Which platform to use when pulling a multi-platform base. Format: all | <os>[/<arch>[/<variant>]][,platform]*
   -P, --preserve-import-paths      Whether to preserve the full import path after KO_DOCKER_REPO.
       --push                       Push images to KO_DOCKER_REPO (default true)

@@ -24,6 +24,7 @@ func TestOutputFlag(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		args    []string
+		env     map[string]string
 		want    string
 		wantErr bool
 	}{
@@ -31,9 +32,15 @@ func TestOutputFlag(t *testing.T) {
 		{name: "long", args: []string{"--output", "json"}, want: OutputJSON},
 		{name: "alias", args: []string{"--out=json"}, want: OutputJSON},
 		{name: "short", args: []string{"-O", "text"}, want: OutputText},
+		{name: "github", args: []string{"-O", "github"}, env: map[string]string{"GITHUB_ACTIONS": "true", "GITHUB_OUTPUT": "/tmp/out"}, want: OutputGitHub},
+		{name: "github outside actions", args: []string{"-O", "github"}, env: map[string]string{"GITHUB_ACTIONS": "false", "GITHUB_OUTPUT": "/tmp/out"}, want: OutputGitHub, wantErr: true},
+		{name: "github without output file", args: []string{"-O", "github"}, env: map[string]string{"GITHUB_ACTIONS": "true", "GITHUB_OUTPUT": ""}, want: OutputGitHub, wantErr: true},
 		{name: "invalid", args: []string{"-O", "yaml"}, want: "yaml", wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			for _, k := range []string{"GITHUB_ACTIONS", "GITHUB_OUTPUT"} {
+				t.Setenv(k, tc.env[k])
+			}
 			oo := &OutputOptions{}
 			cmd := &cobra.Command{Use: "test"}
 			AddOutputArg(cmd, oo)

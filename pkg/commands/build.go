@@ -16,6 +16,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/google/ko/pkg/commands/options"
 	"github.com/google/ko/pkg/publish"
@@ -87,9 +88,9 @@ func addBuild(topLevel *cobra.Command) {
 			}
 			defer publisher.Close()
 
-			// Only JSON output needs to know more than the published refs.
+			// Only JSON and GitHub output need to know more than the published refs.
 			var collector *publish.Collector
-			if oo.Output == options.OutputJSON {
+			if oo.Output == options.OutputJSON || oo.Output == options.OutputGitHub {
 				collector = publish.NewCollector(publisher)
 				publisher = collector
 			}
@@ -108,6 +109,12 @@ func addBuild(topLevel *cobra.Command) {
 			out, err := newBuildOutput(results, po, bo)
 			if err != nil {
 				return fmt.Errorf("describing published images: %w", err)
+			}
+			if oo.Output == options.OutputGitHub {
+				if err := writeGitHubOutput(os.Getenv("GITHUB_OUTPUT"), out); err != nil {
+					return err
+				}
+				return writeBuildOutput(cmd.OutOrStdout(), images)
 			}
 			return writeJSONBuildOutput(cmd.OutOrStdout(), out)
 		},
